@@ -1,0 +1,561 @@
+---
+title: 'Data Project #1'
+author: "Cong Le and Brandon Tomich"
+date: "March 28, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Project Objectives: 
+
+1. Perform an exploratory data analysis of the dataset. 
+2. One of the variables is Total Fitness Factor Score (column with header “FF”) which is computed using a formula (hidden from you). Come up with an approximation of Total Fitness Factor Score for a subject using only the other available variables. 
+
+## Exploratory Data Analysis (EDA)
+- Setting up the environment and installing necessary libraries 
+```{r  Setting up the working space ,message=FALSE, results='hide'}
+# update all existing packages first
+#update.packages(ask = FALSE, repos = 'http://cran.rstudio.org')
+
+# set the working directory 
+setwd("~/Desktop/CSUF/This_semester/CPSC 375/project")
+
+# Installation and loading required packages
+if(!require(tidyverse)){
+  install.packages("tidyverse") # Install from CRAN 
+  library(tidyverse)
+  library(dplyr)
+}
+if(!require(knitr)){
+  install.packages("knitr", dependencies = TRUE)
+  # alternative way to install
+  #  install.packages('knitr', repos = c('http://rforge.net', 'http://cran.rstudio.org'), type = 'source') 
+  library(knitr)
+}
+if(!require(kableExtra)){
+  install.packages("kableExtra") 
+  # devtools::install_github("haozhu233/kableExtra") # For dev version
+  library(kableExtra) # make pretty table format 
+}
+if(!require(Amelia)){
+  install.packages("Amelia") # Install from CRAN 
+  library(Amelia)            # for missmap(), amelia()
+}
+
+if(!require(VIM)){
+  install.packages("VIM") # for aggr() 
+}
+if(!require(PerformanceAnalytics)){
+  install.packages("PerformanceAnalytics")
+}
+if(!require(ggExtra)){
+  install.packages("ggExtra") # for ggMarginal()
+}
+if(!require(ggpubr)){
+  install.packages("ggpubr") # for ggscatterhist()
+}
+if(!require(ggplot2)){
+  install.packages("ggplot2") # for stat_smooth()
+}
+if(!require(ggpmisc)){
+  install.packages("ggpmisc") # for stat_poly_eq()
+}
+if(!require(ggpubr))
+  install.packages("ggpubr") # for stat_cor()
+
+```
+
+```{r Loading the dataset, message=FALSE}
+# Loading the dataset file
+rawHeathScienceData <- read.csv("Health_Sciences_Data_File_project1.csv")
+# checking the first 6 rows of data 
+# format for html output
+ #kable(head(rawHeathScienceData)) %>% 
+ #  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "reponsive"), 
+ #                full_width =F, 
+  #               position = "center")
+ 
+# format for pdf output
+ first6RowData <-head(rawHeathScienceData)
+ kable(first6RowData, format = "latex", booktabs=TRUE) %>%
+   kable_styling(latex_options = "scale_down")
+
+```
+- When we take a look at the feature name and comapring with definition of each feture in *Data dictionary project1*, a pair of duplicated feature name might cause confusion is **FF** and **FF.1**. 
+```{r checking feature names, message=FALSE}
+# Get feture names from the origiral dataset 
+colnames(rawHeathScienceData)
+# Rename column where names is "FF" and "FF.1"
+names(rawHeathScienceData)[names(rawHeathScienceData) == "FF"] <- "ForwadFlexion"
+names(rawHeathScienceData)[names(rawHeathScienceData) == "FF.1"] <- "TotalFFScore"
+```
+
+- Examing the original dataset: 
+```{r structure of the original dataset, message=FALSE}
+#Examing the structure of the original dataset:
+str(rawHeathScienceData)
+```
+
+- Since not all features in our dataset will be meaningful to build the required mathemetical model against the **Total FF Score** and based on the  the *Data dictionary project1* file, we will not consider the following useless features: **Date**, **Idnum** in futher analysis. On the other hand, the pair of variable **Sex** and **RF.2** both indicates gender in the dataset. Thus, we will remove the variable **RF.2** because it is redundant.   
+
+```{r eliminating useless features, message=FALSE}
+# Removing columns Idnum and Date
+rawHeathScienceData <- rawHeathScienceData %>% select(-Idnum,-Date, -RF.2) 
+```
+
+```{r summary, message=FALSE } 
+# Generating summary statistics (mean, median, any outliers, any missing data points) for all variables
+summary(rawHeathScienceData)
+#Counting how many NA values each column contains:
+colSums(is.na(rawHeathScienceData))
+```
+- Based on the summary of all variables, we can observe that there are many NA values in 8 features: **SF.1**, **SF.2**, **SF.3**, **BIA_percent_Fat**, **Waist**, **PL.3**, **HR.3**, and **RPE.3**. Also, our dataset does not have  the same number of rows for each individual features. 
+
+## Visual inspection of the missing data
+
+- We will use the heatmap to see the location of our NA values across the columns in our dataset. 
+``` {r heatmap, message=FALSE }
+#The heatmap to show all NA values in our dataset:  
+heatmap(1 * is.na(rawHeathScienceData), 
+        Rowv = NA, 
+        Colv = NA,  # turn off column clustering
+        main = "Missing Values in All Original Features ")
+
+```
+
+- As shown in the heatmap plot, the yellow parts represent the missing values in our dataset.
+- An alternative way to visualize the missing values via using missmap():
+```{r missmap, message=FALSE}
+# missmap version to visualize NA values across dataset 
+missmap(rawHeathScienceData)
+```
+
+- Since the features **BIA_percent_Fat** and **Waist** contain mostly missing values, we will eliminate these 2 columns.
+
+```{r eliminatating BIA_percent_Fat and Waist, message=FALSE}
+#Removing columns BIA_percent_Fat and Waist
+neatHeathScienceData <- rawHeathScienceData %>% select(-BIA_percent_Fat,-Waist) 
+```
+
+```{r missmap version , message=FALSE}
+# missmap version to visualize NA values across dataset
+missmap(neatHeathScienceData)
+```
+
+- We will represent the missing value in a better visualization: 
+```{r, message=FALSE}
+library(VIM)
+micePlotMissingValues <- aggr(neatHeathScienceData, col=c('navyblue', 'yellow'), 
+                              numbers=TRUE, sortVars=TRUE, 
+                              labels=names(neatHeathScienceData), cex.axis= .5,
+                              gap=0.2, ylab=c("Proportion of missings (Imputed missings)", "Missingness Pattern"))
+```
+- Obversing the plot, we see 69.30% values in the dataset with no missing value. There are 24.44% missing values in **SF.1**, **SF.2**, and **SF.3**, 5.07% missing values in **RPE.3**, **PL.3**, and **HR.3** and so on. We can also take a look at the histogram to observe the distribution of the missing values among features in the dataset. 
+
+
+
+## Visualization of Selected Individual Features
+- Based on the objective of this project, we will use **Total FF Score** as *dependent feature* and test against other features in the dataset in order to figure out appropricate *independent features* to build mathematical model. 
+
+- We will exam correlation among features, excluding the features named Sex and Stages:
+```{r, message=FALSE}
+# excluding Sex and Stages to determine the correlation among features
+correlationHeathScienceData <- neatHeathScienceData %>% select(-Sex, -Stages)
+
+# We will perform visualize our features as follwing
+library(PerformanceAnalytics)
+chart.Correlation(correlationHeathScienceData, histogram=TRUE, pch=19)
+```
+
+
+- In the above plot: 
+  1. The distribution of each variable is shown on the diagonal.
+  2. On the bottom of the diagonal : the bivariate scatter plots with a fitted line are displayed
+  3. On the top of the diagonal : the value of the correlation plus the significance level as stars. 
+     Each significance level is associated to a symbol : 
+     p-values(0, 0.001, 0.01, 0.05, 0.1, 1) <=> symbols(\“***”\, \“**”\, \“*”\, “.”, " “)
+     
+- For simplicity, we use function *lm()* and perfrom trial and error approach on our dataset to come up with the following promising *independent features*: **SF.1**, **SF.2**, **SF.3**, **RGM**, **LGM**, and **VC**.
+
+## Visualization selected features in more details
+- Now, we will take a closer look on chosen variables: **SF.1**, **SF.2**, **SF.3**, **RGM**, **LGM**, and **VC**.
+
+### For SF.1
+```{r SF.1, message=FALSE}
+#Summary statistics (mean, median, any outliers, any missing data points)
+summary(correlationHeathScienceData$SF.1)
+#-------------------------------------------------------------------------
+# The density with the normal curve and excluding the NA's values 
+SF.1_x <- correlationHeathScienceData$SF.1 
+SF.1_h<-hist(SF.1_x, breaks=10, col="red", xlab="SF.1", 
+   main="Histogram of SF.1 with Normal Curve") 
+SF.1_xfit<-seq(min(SF.1_x,na.rm = TRUE),max(SF.1_x,na.rm = TRUE),length=40) 
+SF.1_yfit<-dnorm(SF.1_xfit,mean=mean(SF.1_x,na.rm = TRUE),sd=sd(SF.1_x,na.rm = TRUE)) 
+SF.1_yfit <- SF.1_yfit*diff(SF.1_h$mids[1:2])*length(SF.1_x) 
+lines(SF.1_xfit, SF.1_yfit, col="blue", lwd=2)
+#-------------------------------------------------------------------------
+# A basic scatterplot of SF.1 vs TotalFFScore facetted by gender with boxplots as the marginal plots.
+library(ggpubr)
+ggscatterhist(
+  neatHeathScienceData, x = "SF.1", y = "TotalFFScore",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# SF.1 vs TotalFFScore
+#Set the theme for our scatterplots for the future use upon this point
+theme_set(
+  theme_bw() +
+    theme(legend.position = "top")
+  )
+# Define the mathematical model for the future use upon this point
+formula <- y ~ x
+```
+
+```{r, message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of SF.1 vs TotalFFScore facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=TotalFFScore, x=SF.1)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+library(ggplot2)    # for stat_smooth() to draw regression lines
+library(ggpubr)    # for #stat_cor() to show  the correlation coefficients
+library(ggpmisc)   # for stat_poly_eq() to show the equantions of regression lines 
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **SF.1** values of both gender have a negative correlation with **TotalFFScore**. 
+
+
+# For SF.2
+```{r SF.2, message=FALSE}
+#Summary statistics (mean, median, any outliers, any missing data points)
+summary(correlationHeathScienceData$SF.2)
+#-------------------------------------------------------------------------
+# The density with the normal curve and excluding the NA's values 
+SF.2_x <- correlationHeathScienceData$SF.2 
+SF.2_h<-hist(SF.2_x, breaks=10, col="red", xlab="SF.2", 
+   main="Histogram of SF.2 with Normal Curve") 
+SF.2_xfit<-seq(min(SF.2_x,na.rm = TRUE),max(SF.2_x,na.rm = TRUE),length=40) 
+SF.2_yfit<-dnorm(SF.2_xfit,mean=mean(SF.2_x,na.rm = TRUE),sd=sd(SF.2_x,na.rm = TRUE)) 
+SF.2_yfit <- SF.2_yfit*diff(SF.2_h$mids[1:2])*length(SF.2_x) 
+lines(SF.2_xfit, SF.2_yfit, col="blue", lwd=2)
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of SF.1 vs TotalFFScore facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "SF.2", y = "TotalFFScore",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# SF.2 vs TotalFFScore
+# A basic scatterplot of SF.2 vs TotalFFScore facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=TotalFFScore, x=SF.2)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **SF.2** values of both gender have a negative correlation with **TotalFFScore**. 
+
+### For SF.3
+```{r SF.3, message=FALSE}
+#Summary statistics (mean, median, any outliers, any missing data points)
+summary(correlationHeathScienceData$SF.3)
+#-------------------------------------------------------------------------
+# The density with the normal curve and excluding the NA's values 
+SF.3_x <- correlationHeathScienceData$SF.3 
+SF.3_h<-hist(SF.3_x, breaks=10, col="red", xlab="SF.3", 
+   main="Histogram of SF.3 with Normal Curve") 
+SF.3_xfit<-seq(min(SF.3_x,na.rm = TRUE),max(SF.3_x,na.rm = TRUE),length=40) 
+SF.3_yfit<-dnorm(SF.3_xfit,mean=mean(SF.3_x,na.rm = TRUE),sd=sd(SF.3_x,na.rm = TRUE)) 
+SF.3_yfit <- SF.3_yfit*diff(SF.3_h$mids[1:2])*length(SF.3_x) 
+lines(SF.3_xfit, SF.3_yfit, col="blue", lwd=2)
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of SF.3 vs TotalFFScore facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "SF.3", y = "TotalFFScore",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# SF.3 vs TotalFFScore
+# A basic scatterplot of SF.3 vs TotalFFScore facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=TotalFFScore, x=SF.3)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **SF.3** values of both gender have a negative correlation with **TotalFFScore**. 
+
+### For RGM
+```{r RGM, message=FALSE}
+#Summary statistics (mean, median, any outliers, any missing data points)
+summary(correlationHeathScienceData$RGM)
+#-------------------------------------------------------------------------
+# The density with the normal curve
+RGM_x <- correlationHeathScienceData$RGM 
+RGM_h<-hist(RGM_x, breaks=10, col="red", xlab="RGM", 
+   main="Histogram of RGM with Normal Curve") 
+RGM_xfit<-seq(min(RGM_x),max(RGM_x),length=40) 
+RGM_yfit<-dnorm(RGM_xfit,mean=mean(RGM_x),sd=sd(RGM_x)) 
+RGM_yfit <- RGM_yfit*diff(RGM_h$mids[1:2])*length(RGM_x) 
+lines(RGM_xfit, RGM_yfit, col="blue", lwd=2)
+
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of RGM vs TotalFFScore facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "RGM", y = "TotalFFScore",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# RGM vs TotalFFScore
+# A basic scatterplot of RGM vs TotalFFScore facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=TotalFFScore, x=RGM)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **RGM** values of both gender have a positive correlation with **TotalFFScore**. 
+
+### For LGM
+```{r LGM, message=FALSE}
+#Summary statistics (mean, median, any outliers, any missing data points)
+summary(correlationHeathScienceData$LGM)
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of LGM vs TotalFFScore facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "LGM", y = "TotalFFScore",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# LGM vs TotalFFScore
+# A basic scatterplot of LGM vs TotalFFScore facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=TotalFFScore, x=LGM)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **LGM** values of both gender have a positive correlation with **TotalFFScore**. 
+### For VC
+```{r VC, message=FALSE}
+#Summary statistics (mean, median, any outliers, any missing data points)
+summary(correlationHeathScienceData$VC)
+#-------------------------------------------------------------------------
+# The density with the normal curve
+VC_x <- correlationHeathScienceData$VC 
+VC_h<-hist(VC_x, breaks=10, col="red", xlab="VC", 
+   main="Histogram of VC with Normal Curve") 
+VC_xfit<-seq(min(VC_x),max(VC_x),length=40) 
+VC_yfit<-dnorm(VC_xfit,mean=mean(VC_x),sd=sd(VC_x)) 
+VC_yfit <- VC_yfit*diff(VC_h$mids[1:2])*length(VC_x) 
+lines(VC_xfit, VC_yfit, col="blue", lwd=2)
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of VC vs TotalFFScore facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "VC", y = "TotalFFScore",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# VC vs TotalFFScore
+# A basic scatterplot of VC vs TotalFFScore facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=TotalFFScore, x=VC)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **VC** values of both gender have a positive correlation with **TotalFFScore**. 
+
+### RGM vs LGM
+```{r RGM vs LGM, message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of RGM vs LGM facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "LGM", y = "RGM",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of RGM vs LGM facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=RGM, x=LGM)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **LGM** values of both gender have a positive correlation with **RGM**.
+
+### RGM and VC
+```{r RGM and VC, message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of RGM vs VC facetted by gender with boxplots as the marginal plots.
+ggscatterhist(
+  neatHeathScienceData, x = "VC", y = "RGM",
+  color = "Sex", size = 3, alpha = 0.6,
+  palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+  margin.plot = "boxplot",
+  ggtheme = theme_bw()
+  )
+```
+
+```{r , message=FALSE}
+#-------------------------------------------------------------------------
+# A basic scatterplot of RGM vs LGM facetted by gender:
+p <- ggplot(data=neatHeathScienceData,aes(y=RGM, x=VC)) +
+    geom_point(aes(color=Sex, size=Sex), size=2, alpha = 0.6)+
+  # customize the color for the the regresion lines and confident regions
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#FC4E07")) +
+  scale_fill_manual(values = c("#00AFBB", "#E7B800", "#FC4E07"))+
+  facet_wrap(~Sex)
+#......................................................................
+# Add regression line, correlation coefficient and equantions of the fitted line
+p + 
+  # Extend the regression lines: fullrange = TRUE
+  geom_smooth( aes(color = Sex, fill = Sex), method = "lm",fullrange = TRUE) +
+  stat_cor(aes(color = Sex), label.y = 4.4)+
+  stat_poly_eq(
+    aes(color = Sex, label = ..eq.label..),
+    formula = formula, label.y = 4.2, parse = TRUE)
+```
+
+- Based on the above graphs, we can conclude that the **VC** values of both gender have a positive correlation with **RGM**.
+
+- Please check our file *totalfitnessfactorscore.R* for the validation process and Total Fitness Factor Score
+approximation.  
+
